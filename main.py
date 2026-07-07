@@ -12,7 +12,7 @@ from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filte
 from openai import OpenAI
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -27,11 +27,11 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# --- АВТОЗАВАНТАЖЕННЯ ШРИФТУ З КИРИЛИЦЕЮ ДЛЯ 1С-ШАБЛОНУ ---
+# --- АВТОЗАВАНТАЖЕННЯ ШРИФТІВ ДЛЯ 1С-ШАБЛОНУ ---
 font_path = "DejaVuSans.ttf"
 font_bold_path = "DejaVuSans-Bold.ttf"
 
-if not os.path.exists(font_path):
+if not os.path.exists(font_path) or not os.path.exists(font_bold_path):
     print("Завантажую шрифти для кирилиці...")
     urllib.request.urlretrieve("https://github.com/matomo-org/travis-scripts/raw/master/fonts/DejaVuSans.ttf", font_path)
     urllib.request.urlretrieve("https://github.com/matomo-org/travis-scripts/raw/master/fonts/DejaVuSans-Bold.ttf", font_bold_path)
@@ -45,13 +45,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_path = f"invoice_{update.message.chat_id}.jpg"
     await file.download_to_drive(file_path)
 
-    await update.message.reply_text("📸 Фотку отримав! Верстаю ідеальні накладні 1 в 1...")
+    await update.message.reply_text("📸 Фотку отримав! Аналізую всі позиції та верстаю накладні 1 в 1...")
 
     try:
         with open(file_path, "rb") as image_file:
             base64_image = base64.b64encode(image_file.read()).decode('utf-8')
 
-        # Промпт: розбивка + сума прописом
+        # Промпт: розбивка + витягування ціни з ПДВ для математики
         response = client.chat.completions.create(
             model="gpt-4o",
             response_format={"type": "json_object"},
@@ -62,12 +62,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         {
                             "type": "text", 
                             "text": (
-                                "Зчитай табличну частину накладної. "
+                                "Зчитай табличну частину накладної (всі позиції). "
                                 "РОЗБИЙ товари на логічні категорії для створення окремих накладних. "
                                 "Зберігай оригінальні УКРАЇНСЬКІ назви товарів. "
-                                "Для кожної категорії порахуй загальну суму з ПДВ і додай поле 'total_text' — сума прописом українською мовою (наприклад: 'П'ятсот тридцять дві гривні 08 копійок'). "
+                                "Для кожної позиції витягни 'quantity' (кількість) та 'price' (ціна з ПДВ, як у колонці документа). "
                                 "JSON Структура: "
-                                "{\"invoices\": [{\"category\": \"назва групи\", \"total_text\": \"сума прописом\", \"items\": [{\"product\": \"назва\", \"quantity\": 1, \"price\": 10.5, \"total\": 10.5}]}]}"
+                                "{\"invoices\": [{\"category\": \"назва групи\", \"items\": [{\"product\": \"назва\", \"quantity\": 1, \"price\": 10.5}]}]}"
                             )
                         },
                         {
@@ -100,11 +100,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         style_table_cell_right = ParagraphStyle('TCR', fontName='DejaVu', fontSize=8, leading=10, alignment=2)
 
         excel_data = []
-        current_date = datetime.now().strftime("%d Квітня 2026 р.") # Або використовуй динамічний місяць
+        current_date = datetime.now().strftime("%d.%m.%Y") 
+
+        def get_text_sum(total):
+            int_part = int(total)
+            kop_part = int(round((total - int_part) * 100))
+            return f"{int_part} грн. {kop_part:02d} коп."
 
         for idx_inv, inv in enumerate(invoices, 1):
             category_name = inv.get("category", f"Група {idx_inv}")
-            total_text = inv.get("total_text", "Сума прописом відсутня")
             items = inv.get("items", [])
             
             # 1. ШАПКА
@@ -128,7 +132,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # 2. ЗАГОЛОВОК ДОКУМЕНТА
             doc_number = f"ВН-0009{idx_inv:03d}"
             elements.append(Paragraph(f"<b>Накладна на повернення № {doc_number}</b>", style_bold_center))
-            elements.append(Paragraph(f"<b>від {current_date}</b>", style_bold_center))
+            elements.append(Paragraph(f"<b>від {current_date} р.</b>", style_bold_center))
             elements.append(Spacer(1, 15))
             
             # 3. ТАБЛИЦЯ ТОВАРІВ
@@ -141,39 +145,42 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 Paragraph("<b>Сума без ПДВ</b>", style_table_header)
             ]]
             
-            total_sum_bez_pdv = 0.0
+            sum_bez_pdv = 0.0
 
             for idx, item in enumerate(items, 1):
                 prod_name = str(item.get("product", "Невідомо"))
                 qty = float(item.get("quantity", 0))
-                price = float(item.get("price", 0))
-                total = qty * price
-                total_sum_bez_pdv += total
+                price_z_pdv = float(item.get("price", 0))
+                
+                # Математика 1С: витягуємо ціну без ПДВ (ділимо на 1.2)
+                price_bez_pdv = price_z_pdv / 1.2
+                total_bez_pdv = qty * price_bez_pdv
+                sum_bez_pdv += total_bez_pdv
                 
                 table_data.append([
                     Paragraph(str(idx), style_table_cell_right),
                     Paragraph(prod_name, style_table_cell),
                     Paragraph("шт", style_table_cell),
                     Paragraph(f"{qty:.3f}", style_table_cell_right),
-                    Paragraph(f"{price:.6f}", style_table_cell_right),
-                    Paragraph(f"{total:.2f}", style_table_cell_right)
+                    Paragraph(f"{price_bez_pdv:.6f}", style_table_cell_right),
+                    Paragraph(f"{total_bez_pdv:.2f}", style_table_cell_right)
                 ])
                 
                 excel_data.append({
                     "Категорія": category_name,
                     "Товар": prod_name,
                     "Кількість": qty,
-                    "Ціна": price,
-                    "Сума": total
+                    "Ціна без ПДВ": round(price_bez_pdv, 6),
+                    "Сума без ПДВ": round(total_bez_pdv, 2)
                 })
 
-            pdv = total_sum_bez_pdv * 0.20
-            total_with_pdv = total_sum_bez_pdv + pdv
+            pdv = sum_bez_pdv * 0.20
+            sum_z_pdv = sum_bez_pdv + pdv
 
             # Підсумки
-            table_data.append(["", "", "", "", Paragraph("<b>Разом без ПДВ:</b>", style_table_header), Paragraph(f"{total_sum_bez_pdv:.2f}", style_table_cell_right)])
+            table_data.append(["", "", "", "", Paragraph("<b>Разом без ПДВ:</b>", style_table_header), Paragraph(f"{sum_bez_pdv:.2f}", style_table_cell_right)])
             table_data.append(["", "", "", "", Paragraph("<b>ПДВ:</b>", style_table_header), Paragraph(f"{pdv:.2f}", style_table_cell_right)])
-            table_data.append(["", "", "", "", Paragraph("<b>Всього з ПДВ:</b>", style_table_header), Paragraph(f"{total_with_pdv:.2f}", style_table_cell_right)])
+            table_data.append(["", "", "", "", Paragraph("<b>Всього з ПДВ:</b>", style_table_header), Paragraph(f"{sum_z_pdv:.2f}", style_table_cell_right)])
 
             t_items = Table(table_data, colWidths=[20, 215, 30, 60, 95, 95])
             t_items.setStyle(TableStyle([
@@ -192,8 +199,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # 4. ПІДПИСИ
             elements.append(Paragraph("Всього на суму:", style_normal))
-            elements.append(Paragraph(f"<b>{total_text.capitalize()}</b>", ParagraphStyle('B', fontName='DejaVu-Bold', fontSize=9, leading=11)))
-            elements.append(Paragraph(f"ПДВ: {pdv:.2f} грн.", style_normal))
+            elements.append(Paragraph(f"<b>Сума прописом: {get_text_sum(sum_z_pdv)}</b>", ParagraphStyle('B', fontName='DejaVu-Bold', fontSize=9, leading=11)))
+            elements.append(Paragraph(f"ПДВ:     {pdv:.2f} грн.", style_normal))
             elements.append(Spacer(1, 25))
             
             sig_data = [[Paragraph("Отримав(ла) _______________________", style_normal), Paragraph("Видав(ла) _______________________", style_normal)]]
@@ -207,12 +214,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # --- ГЕНЕРАЦІЯ CSV ---
         csv_path = f"return_invoices_{update.message.chat_id}.csv"
         with open(csv_path, mode='w', newline='', encoding='utf-8-sig') as f:
-            writer = csv.DictWriter(f, fieldnames=["Категорія", "Товар", "Кількість", "Ціна", "Сума"])
+            writer = csv.DictWriter(f, fieldnames=["Категорія", "Товар", "Кількість", "Ціна без ПДВ", "Сума без ПДВ"])
             writer.writeheader()
             writer.writerows(excel_data)
 
         # Відправка
-        await update.message.reply_document(document=open(pdf_path, 'rb'), filename="Nakladni_1C_1-in-1.pdf")
+        await update.message.reply_document(document=open(pdf_path, 'rb'), filename="Nakladni_1C.pdf")
         await update.message.reply_document(document=open(csv_path, 'rb'), filename="Data_1C.csv")
 
     except Exception as e:
@@ -232,7 +239,7 @@ if __name__ == '__main__':
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
-    print("Бот запущений! Ідеальний шаблон підключено.")
+    print("Бот запущений! Ідеальний шаблон 1С підключено.")
     
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
