@@ -27,14 +27,14 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# --- АВТОЗАВАНТАЖЕННЯ ШРИФТІВ ДЛЯ 1С-ШАБЛОНУ ---
+# --- АВТОЗАВАНТАЖЕННЯ ШРИФТІВ ДЛЯ 1С-ШАБЛОНУ (З ОНОВЛЕНИМИ ПОСИЛАННЯМИ) ---
 font_path = "DejaVuSans.ttf"
 font_bold_path = "DejaVuSans-Bold.ttf"
 
 if not os.path.exists(font_path) or not os.path.exists(font_bold_path):
     print("Завантажую шрифти для кирилиці...")
-    urllib.request.urlretrieve("https://github.com/matomo-org/travis-scripts/raw/master/fonts/DejaVuSans.ttf", font_path)
-    urllib.request.urlretrieve("https://github.com/matomo-org/travis-scripts/raw/master/fonts/DejaVuSans-Bold.ttf", font_bold_path)
+    urllib.request.urlretrieve("https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans.ttf", font_path)
+    urllib.request.urlretrieve("https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans-Bold.ttf", font_bold_path)
 
 pdfmetrics.registerFont(TTFont('DejaVu', font_path))
 pdfmetrics.registerFont(TTFont('DejaVu-Bold', font_bold_path))
