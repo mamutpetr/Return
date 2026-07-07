@@ -27,12 +27,17 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# --- АВТОЗАВАНТАЖЕННЯ ШРИФТУ З КИРИЛИЦЕЮ ---
+# --- АВТОЗАВАНТАЖЕННЯ ШРИФТУ З КИРИЛИЦЕЮ ДЛЯ 1С-ШАБЛОНУ ---
 font_path = "DejaVuSans.ttf"
+font_bold_path = "DejaVuSans-Bold.ttf"
+
 if not os.path.exists(font_path):
-    print("Завантажую шрифт для кирилиці...")
+    print("Завантажую шрифти для кирилиці...")
     urllib.request.urlretrieve("https://github.com/matomo-org/travis-scripts/raw/master/fonts/DejaVuSans.ttf", font_path)
+    urllib.request.urlretrieve("https://github.com/matomo-org/travis-scripts/raw/master/fonts/DejaVuSans-Bold.ttf", font_bold_path)
+
 pdfmetrics.registerFont(TTFont('DejaVu', font_path))
+pdfmetrics.registerFont(TTFont('DejaVu-Bold', font_bold_path))
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = update.message.photo[-1]
@@ -40,13 +45,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_path = f"invoice_{update.message.chat_id}.jpg"
     await file.download_to_drive(file_path)
 
-    await update.message.reply_text("📸 Фотку отримав! Розпізнаю оригінальні назви та верстаю накладні як в 1С...")
+    await update.message.reply_text("📸 Фотку отримав! Верстаю ідеальні накладні 1 в 1...")
 
     try:
         with open(file_path, "rb") as image_file:
             base64_image = base64.b64encode(image_file.read()).decode('utf-8')
 
-        # Оновлений промпт: зберігаємо УКРАЇНСЬКУ мову
+        # Промпт: розбивка + сума прописом
         response = client.chat.completions.create(
             model="gpt-4o",
             response_format={"type": "json_object"},
@@ -57,11 +62,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         {
                             "type": "text", 
                             "text": (
-                                "Зчитай табличну частину цієї накладної. "
-                                "РОЗБИЙ всі товари на логічні групи (категорії), щоб згенерувати кілька накладних (наприклад: Овочі заморожені, Напівфабрикати, Випічка тощо). "
-                                "ВАЖЛИВО: Зберігай оригінальні УКРАЇНСЬКІ назви товарів, ніякого трансліту! "
-                                "Поверни результат у JSON. Структура: "
-                                "{\"invoices\": [{\"category\": \"назва групи\", \"items\": [{\"product\": \"назва\", \"quantity\": 1, \"price\": 10.5, \"total\": 10.5}]}]}"
+                                "Зчитай табличну частину накладної. "
+                                "РОЗБИЙ товари на логічні категорії для створення окремих накладних. "
+                                "Зберігай оригінальні УКРАЇНСЬКІ назви товарів. "
+                                "Для кожної категорії порахуй загальну суму з ПДВ і додай поле 'total_text' — сума прописом українською мовою (наприклад: 'П'ятсот тридцять дві гривні 08 копійок'). "
+                                "JSON Структура: "
+                                "{\"invoices\": [{\"category\": \"назва групи\", \"total_text\": \"сума прописом\", \"items\": [{\"product\": \"назва\", \"quantity\": 1, \"price\": 10.5, \"total\": 10.5}]}]}"
                             )
                         },
                         {
@@ -81,54 +87,58 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Не вдалося розпізнати товари.")
             return
 
-        # --- ГЕНЕРАЦІЯ PDF (ЯК В 1С) ---
-        pdf_path = f"return_invoices_{update.message.chat_id}.pdf"
-        doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+        # --- ГЕНЕРАЦІЯ PDF (Шаблон 1 в 1) ---
+        pdf_path = f"return_invoices_1c_{update.message.chat_id}.pdf"
+        doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
         elements = []
         
-        # Стилі з нашим шрифтом
-        style_normal = ParagraphStyle('Normal_Cyr', fontName='DejaVu', fontSize=9, leading=11)
-        style_bold = ParagraphStyle('Bold_Cyr', fontName='DejaVu', fontSize=11, leading=14, alignment=1) # Center
-        style_table = ParagraphStyle('Table_Cyr', fontName='DejaVu', fontSize=8, leading=10)
+        style_normal = ParagraphStyle('Normal', fontName='DejaVu', fontSize=9, leading=11)
+        style_label = ParagraphStyle('Label', fontName='DejaVu', fontSize=9, leading=11)
+        style_bold_center = ParagraphStyle('Title', fontName='DejaVu-Bold', fontSize=11, leading=14, alignment=1)
+        style_table_header = ParagraphStyle('TH', fontName='DejaVu-Bold', fontSize=8, leading=10, alignment=1)
+        style_table_cell = ParagraphStyle('TC', fontName='DejaVu', fontSize=8, leading=10)
+        style_table_cell_right = ParagraphStyle('TCR', fontName='DejaVu', fontSize=8, leading=10, alignment=2)
 
         excel_data = []
-        current_date = datetime.now().strftime("%d %B %Y р.")
+        current_date = datetime.now().strftime("%d Квітня 2026 р.") # Або використовуй динамічний місяць
 
         for idx_inv, inv in enumerate(invoices, 1):
             category_name = inv.get("category", f"Група {idx_inv}")
+            total_text = inv.get("total_text", "Сума прописом відсутня")
             items = inv.get("items", [])
             
-            # 1. ШАПКА ЯК НА ФОТО
+            # 1. ШАПКА
             header_data = [
-                [Paragraph("<b>Одержувач</b>", style_normal), Paragraph('Товариство з обмеженою відповідальністю "МЕРЕЖА-СЕРВІС ЛЬВІВ"<br/>тел. 0800201800', style_normal)],
-                [Paragraph("<b>Постачальник</b>", style_normal), Paragraph('ПРИВАТНЕ ПІДПРИЄМСТВО "ТРОЯНДА-ЗАХІД"<br/>ЄДРПОУ 30275535, тел. 0322395800<br/>Р/р UA873052990000026002021002174 в АТ КБ "ПРИВАТБАНК"<br/>ІПН 302755313052, номер свідоцтва 17957486<br/>Адреса Львівська обл., м. Львів, вул. Повстанська, буд. 3А, кв. 8', style_normal)],
-                [Paragraph("<b>Платник</b>", style_normal), Paragraph('той самий', style_normal)],
-                [Paragraph("<b>Замовлення</b>", style_normal), Paragraph('Без замовлення', style_normal)],
-                [Paragraph("<b>Умова продажу:</b>", style_normal), Paragraph('Безготівковий розрахунок', style_normal)]
+                [Paragraph("<u>Одержувач</u>", style_label), Paragraph('Товариство з обмеженою відповідальністю "МЕРЕЖА-СЕРВІС ЛЬВІВ"<br/>тел. 0800201800', style_normal)],
+                [Paragraph("<u>Постачальник</u>", style_label), Paragraph('ПРИВАТНЕ ПІДПРИЄМСТВО "ТРОЯНДА-ЗАХІД"<br/>ЄДРПОУ 30275535, тел. 0322395800<br/>Р/р UA873052990000026002021002174 в АТ КБ "ПРИВАТБАНК"<br/>ІПН 302755313052, номер свідоцтва 17957486<br/>Адреса Львівська обл., м. Львів, вул. Повстанська, буд. 3А, кв. 8', style_normal)],
+                [Paragraph("<u>Платник</u>", style_label), Paragraph('той самий', style_normal)],
+                [Paragraph("<u>Замовлення</u>", style_label), Paragraph('Без замовлення', style_normal)],
+                [Paragraph("<u>Умова продажу:</u>", style_label), Paragraph('Безготівковий розрахунок', style_normal)]
             ]
             
-            t_header = Table(header_data, colWidths=[100, 400])
+            t_header = Table(header_data, colWidths=[90, 425])
             t_header.setStyle(TableStyle([
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+                ('TOPPADDING', (0,0), (-1,-1), 0),
             ]))
             elements.append(t_header)
-            elements.append(Spacer(1, 15))
+            elements.append(Spacer(1, 20))
 
             # 2. ЗАГОЛОВОК ДОКУМЕНТА
-            doc_number = f"ВН-{datetime.now().strftime('%y%m')}{idx_inv:03d}"
-            elements.append(Paragraph(f"<b>Накладна на повернення № {doc_number}</b>", style_bold))
-            elements.append(Paragraph(f"<b>від {current_date}</b>", style_bold))
+            doc_number = f"ВН-0009{idx_inv:03d}"
+            elements.append(Paragraph(f"<b>Накладна на повернення № {doc_number}</b>", style_bold_center))
+            elements.append(Paragraph(f"<b>від {current_date}</b>", style_bold_center))
             elements.append(Spacer(1, 15))
             
             # 3. ТАБЛИЦЯ ТОВАРІВ
             table_data = [[
-                Paragraph("<b>№</b>", style_table), 
-                Paragraph("<b>Товар</b>", style_table), 
-                Paragraph("<b>Од.</b>", style_table), 
-                Paragraph("<b>Кількість</b>", style_table), 
-                Paragraph("<b>Ціна без ПДВ</b>", style_table), 
-                Paragraph("<b>Сума без ПДВ</b>", style_table)
+                Paragraph("<b>№</b>", style_table_header), 
+                Paragraph("<b>Товар</b>", style_table_header), 
+                Paragraph("<b>Од.</b>", style_table_header), 
+                Paragraph("<b>Кількість</b>", style_table_header), 
+                Paragraph("<b>Ціна без ПДВ</b>", style_table_header), 
+                Paragraph("<b>Сума без ПДВ</b>", style_table_header)
             ]]
             
             total_sum_bez_pdv = 0.0
@@ -141,12 +151,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 total_sum_bez_pdv += total
                 
                 table_data.append([
-                    str(idx),
-                    Paragraph(prod_name, style_table),
-                    "шт",
-                    f"{qty:.3f}",
-                    f"{price:.6f}",
-                    f"{total:.2f}"
+                    Paragraph(str(idx), style_table_cell_right),
+                    Paragraph(prod_name, style_table_cell),
+                    Paragraph("шт", style_table_cell),
+                    Paragraph(f"{qty:.3f}", style_table_cell_right),
+                    Paragraph(f"{price:.6f}", style_table_cell_right),
+                    Paragraph(f"{total:.2f}", style_table_cell_right)
                 ])
                 
                 excel_data.append({
@@ -157,39 +167,39 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Сума": total
                 })
 
-            # Підсумки під таблицею
             pdv = total_sum_bez_pdv * 0.20
             total_with_pdv = total_sum_bez_pdv + pdv
 
-            # Додаємо порожні клітинки для вирівнювання підсумків
-            table_data.append(["", "", "", "", Paragraph("<b>Разом без ПДВ:</b>", style_table), f"{total_sum_bez_pdv:.2f}"])
-            table_data.append(["", "", "", "", Paragraph("<b>ПДВ:</b>", style_table), f"{pdv:.2f}"])
-            table_data.append(["", "", "", "", Paragraph("<b>Всього з ПДВ:</b>", style_table), f"{total_with_pdv:.2f}"])
+            # Підсумки
+            table_data.append(["", "", "", "", Paragraph("<b>Разом без ПДВ:</b>", style_table_header), Paragraph(f"{total_sum_bez_pdv:.2f}", style_table_cell_right)])
+            table_data.append(["", "", "", "", Paragraph("<b>ПДВ:</b>", style_table_header), Paragraph(f"{pdv:.2f}", style_table_cell_right)])
+            table_data.append(["", "", "", "", Paragraph("<b>Всього з ПДВ:</b>", style_table_header), Paragraph(f"{total_with_pdv:.2f}", style_table_cell_right)])
 
-            t_items = Table(table_data, colWidths=[20, 250, 30, 60, 80, 80])
+            t_items = Table(table_data, colWidths=[20, 215, 30, 60, 95, 95])
             t_items.setStyle(TableStyle([
-                ('GRID', (0,0), (-1, -4), 0.5, colors.black), # Сітка тільки для товарів
-                ('BOX', (4,-3), (-1,-1), 0.5, colors.black),  # Рамка для підсумків
-                ('GRID', (4,-3), (-1,-1), 0.5, colors.black),
                 ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-                ('ALIGN', (0,0), (-1,0), 'CENTER'),
+                ('GRID', (0,0), (-1,-4), 0.5, colors.black),
+                ('GRID', (4,-3), (-1,-1), 0.5, colors.black),
+                ('BOX', (4,-3), (-1,-1), 0.5, colors.black),
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('ALIGN', (2,1), (4,-4), 'RIGHT'),
+                ('ALIGN', (2,0), (2,-4), 'CENTER'),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+                ('TOPPADDING', (0,0), (-1,-1), 1),
             ]))
             
             elements.append(t_items)
-            elements.append(Spacer(1, 20))
+            elements.append(Spacer(1, 15))
             
             # 4. ПІДПИСИ
-            elements.append(Paragraph(f"Всього на суму: <br/><b>Генерована сума прописом (ШІ)</b>", style_normal))
+            elements.append(Paragraph("Всього на суму:", style_normal))
+            elements.append(Paragraph(f"<b>{total_text.capitalize()}</b>", ParagraphStyle('B', fontName='DejaVu-Bold', fontSize=9, leading=11)))
             elements.append(Paragraph(f"ПДВ: {pdv:.2f} грн.", style_normal))
-            elements.append(Spacer(1, 20))
+            elements.append(Spacer(1, 25))
             
-            signatures = [[Paragraph("Отримав(ла) _______________________", style_normal), Paragraph("Видав(ла) _______________________", style_normal)]]
-            t_signs = Table(signatures, colWidths=[270, 270])
-            elements.append(t_signs)
+            sig_data = [[Paragraph("Отримав(ла) _______________________", style_normal), Paragraph("Видав(ла) _______________________", style_normal)]]
+            t_sigs = Table(sig_data, colWidths=[250, 265])
+            elements.append(t_sigs)
             
-            # Розрив сторінки для наступної накладної
             elements.append(Spacer(1, 50))
 
         doc.build(elements)
@@ -202,7 +212,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             writer.writerows(excel_data)
 
         # Відправка
-        await update.message.reply_document(document=open(pdf_path, 'rb'), filename="Nakladni_1C.pdf")
+        await update.message.reply_document(document=open(pdf_path, 'rb'), filename="Nakladni_1C_1-in-1.pdf")
         await update.message.reply_document(document=open(csv_path, 'rb'), filename="Data_1C.csv")
 
     except Exception as e:
@@ -222,7 +232,7 @@ if __name__ == '__main__':
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
-    print("Бот запущений! Шрифт підключено.")
+    print("Бот запущений! Ідеальний шаблон підключено.")
     
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
