@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import logging
+import asyncio  # <-- ДОДАНО ДЛЯ ФІКСУ EVENT LOOP
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 from openai import OpenAI
@@ -155,4 +156,10 @@ if __name__ == '__main__':
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
     print("Бот успішно запущений і чекає на фотки...")
+    
+    # --- МАГІЯ ДЛЯ ФІКСУ ПОМИЛКИ EVENT LOOP ---
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    # ------------------------------------------
+    
     application.run_polling()
