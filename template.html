@@ -3,76 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <style>
-        body { font-family: sans-serif; font-size: 11px; color: #000; }
-        .header-table { width: 100%; border: none; margin-bottom: 20px; }
-        .header-table td { padding: 3px; vertical-align: top; }
-        .title { text-align: center; font-size: 16px; font-weight: bold; margin-top: 10px; }
-        .subtitle { text-align: center; font-size: 12px; margin-bottom: 20px; font-weight: bold; }
+        body { font-family: Helvetica, sans-serif; font-size: 11px; }
+        .header-table { width: 100%; margin-bottom: 20px; }
+        .title { text-align: center; font-size: 14px; font-weight: bold; margin: 10px 0; }
         .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        .items-table th, .items-table td { border: 1px solid #000; padding: 5px; }
-        .items-table th { font-weight: bold; background-color: #f2f2f2; text-align: left; }
-        .totals-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        .totals-table td { padding: 5px; }
-        .totals-table .border-cell { border: 1px solid #000; }
-        .signatures { width: 100%; margin-top: 40px; }
-        .signatures td { padding: 10px; }
+        .items-table th, .items-table td { border: 1px solid #000; padding: 5px; text-align: left; }
+        .totals-table { width: 100%; margin-bottom: 20px; }
     </style>
 </head>
 <body>
     <table class="header-table">
-        <tr>
-            <td style="width: 20%;"><b>Oderzhuvach</b></td>
-            <td style="width: 80%;">Tovarystvo z obmezhenoyu vidpovidalnistyu "MEREZHA-SERVIS LVIV"<br>tel. 0800201800</td>
-        </tr>
-        <tr>
-            <td><b>Postachalnyk</b></td>
-            <td>PRYVATNE PIDPRYEMSTVO "TROYANDA-ZAKHID"<br>EDRPOU 30275535, tel. 0322395800<br>R/p UA873052990000026002021002174 v AT KB "PRYVATBANK"<br>IPN 302755313052, svidotstvo 17957486<br>Adresa Lvivska obl., m. Lviv, vul. Povstanska, bud. 3A, kv. 8</td>
-        </tr>
-        <tr><td><b>Platnyk</b></td><td>toy samyy</td></tr>
-        <tr><td><b>Zamovlennya</b></td><td>Bez zamovlennya</td></tr>
-        <tr><td><b>Umova prodazhu:</b></td><td>Bezgotivkovyy rozrakhunok</td></tr>
+        <tr><td><b>Одержувач:</b></td><td>ТОВ "МЕРЕЖА-СЕРВІС ЛЬВІВ", тел. 0800201800</td></tr>
+        <tr><td><b>Постачальник:</b></td><td>ПП "ТРОЯНДА-ЗАХІД", ЄДРПОУ 30275535</td></tr>
+        <tr><td><b>Умова продажу:</b></td><td>Безготівковий розрахунок</td></tr>
     </table>
 
-    <div class="title">Nakladna na povernennya No {{invoice_num}}</div>
-    <div class="subtitle">vid {{date}}</div>
+    <div class="title">Накладна на повернення № {{invoice_num}} від {{date}}</div>
 
     <table class="items-table">
-        <tr>
-            <th style="width: 5%;">No</th>
-            <th style="width: 45%;">Tovar</th>
-            <th style="width: 10%;">Od.</th>
-            <th style="width: 10%;">Kilkist</th>
-            <th style="width: 15%;">Tsina bez PDV</th>
-            <th style="width: 15%;">Suma bez PDV</th>
-        </tr>
-        <!-- Сюди бот вставить згенеровані рядки товарів -->
+        <tr><th>№</th><th>Товар</th><th>Од.</th><th>Кількість</th><th>Ціна без ПДВ</th><th>Сума без ПДВ</th></tr>
         {{items_rows}}
     </table>
 
     <table class="totals-table">
-        <tr>
-            <td style="width: 70%; text-align: right;"><b>Razom bez PDV:</b></td>
-            <td class="border-cell" style="width: 15%; text-align: right;">{{total_no_vat}}</td>
-        </tr>
-        <tr>
-            <td style="text-align: right;"><b>PDV:</b></td>
-            <td class="border-cell" style="text-align: right;">{{vat}}</td>
-        </tr>
-        <tr>
-            <td style="text-align: right;"><b>Vsogo z PDV:</b></td>
-            <td class="border-cell" style="text-align: right;">{{total_with_vat}}</td>
-        </tr>
+        <tr><td style="text-align: right;"><b>Разом без ПДВ:</b> {{total_no_vat}} грн.</td></tr>
+        <tr><td style="text-align: right;"><b>ПДВ:</b> {{vat}} грн.</td></tr>
+        <tr><td style="text-align: right;"><b>Всього з ПДВ:</b> {{total_with_vat}} грн.</td></tr>
     </table>
 
-    <p>Vsogo na sumu:</p>
-    <p><b>{{total_text}}</b></p>
-    <p>PDV: {{vat}} grn.</p>
-
-    <table class="signatures">
-        <tr>
-            <td style="width: 50%;">Otrymav(la) _______________________</td>
-            <td style="width: 50%; text-align: right;">Vydav(la) _______________________</td>
-        </tr>
+    <p><b>Сума прописом:</b> {{total_text}}</p>
+    <br><br>
+    <table style="width: 100%;">
+        <tr><td>Отримав(ла) _______________________</td><td style="text-align: right;">Видав(ла) _______________________</td></tr>
     </table>
 </body>
 </html>
