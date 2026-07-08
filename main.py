@@ -6,17 +6,68 @@ import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, ConversationHandler, CommandHandler
 from openai import OpenAI
-from xhtml2pdf import pisa
+from fpdf import FPDF
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 ASKING_FOR_TOTAL = 1
 
-def generate_pdf(html_content, output_path):
-    with open(output_path, "w+b") as result_file:
-        # Кодуємо в utf-8 байт-рядок, щоб xhtml2pdf коректно бачив текст
-        pisa.CreatePDF(html_content.encode('utf-8'), dest=result_file, encoding='utf-8')
+def create_invoice_pdf(data, output_path):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Підключаємо шрифт намертво (DejaVuSerif.ttf має бути в корені)
+    pdf.add_font('DejaVu', '', 'DejaVuSerif.ttf')
+    
+    # --- ШАПКА ---
+    pdf.set_font('DejaVu', '', 10)
+    pdf.cell(0, 5, 'Одержувач: ТОВ "МЕРЕЖА-СЕРВІС ЛЬВІВ"', ln=1)
+    pdf.cell(0, 5, 'Постачальник: ПП "ТРОЯНДА-ЗАХІД"', ln=1)
+    pdf.ln(10)
+    
+    # --- ЗАГОЛОВОК ---
+    pdf.set_font('DejaVu', '', 14)
+    invoice_title = f'Накладна № {data.get("invoice_num", "-")} від {data.get("date", "-")}'
+    pdf.cell(0, 10, invoice_title, align='C', ln=1)
+    pdf.ln(5)
+    
+    # --- ТАБЛИЦЯ ---
+    pdf.set_font('DejaVu', '', 10)
+    # Задаємо ширину колонок: № (10), Товар (80), Од (20), К-ть (20), Ціна (30), Сума (30)
+    col_widths = [10, 80, 20, 20, 30, 30]
+    headers = ['№', 'Товар', 'Од.', 'К-ть', 'Ціна', 'Сума']
+    
+    # Малюємо заголовки колонок
+    for i in range(len(headers)):
+        pdf.cell(col_widths[i], 8, headers[i], border=1, align='C')
+    pdf.ln()
+    
+    # Малюємо товари
+    for idx, it in enumerate(data.get('items', []), 1):
+        pdf.cell(col_widths[0], 8, str(idx), border=1, align='C')
+        
+        # Запобіжник: якщо назва товару дуже довга, обрізаємо її, щоб не зламалась таблиця
+        name = str(it.get('name', 'Товар'))
+        if len(name) > 42:
+            name = name[:39] + "..."
+            
+        pdf.cell(col_widths[1], 8, name, border=1)
+        pdf.cell(col_widths[2], 8, str(it.get('unit', '-')), border=1, align='C')
+        pdf.cell(col_widths[3], 8, str(it.get('qty', 0)), border=1, align='C')
+        pdf.cell(col_widths[4], 8, f"{float(it.get('price', 0)):.2f}", border=1, align='C')
+        pdf.cell(col_widths[5], 8, f"{float(it.get('qty', 0)) * float(it.get('price', 0)):.2f}", border=1, align='C')
+        pdf.ln()
+        
+    pdf.ln(5)
+    
+    # --- ВСЬОГО ---
+    pdf.set_font('DejaVu', '', 12)
+    total_str = f'Всього з ПДВ: {data.get("total_with_vat", 0):.2f} грн.'
+    pdf.cell(0, 10, total_str, align='R', ln=1)
+    
+    # Зберігаємо файл
+    pdf.output(output_path)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Аналізую накладну...")
@@ -60,23 +111,10 @@ async def receive_hint(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await process_pdf(update, context, data)
 
 async def process_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE, data: dict):
-    with open("template.html", "r", encoding="utf-8") as f:
-        html = f.read()
-    
-    # 1. Отримуємо абсолютний шлях до шрифту на сервері Render
-    font_path = os.path.abspath("DejaVuSerif.ttf")
-    
-    rows = ""
-    for idx, it in enumerate(data.get('items', []), 1):
-        rows += f"<tr><td>{idx}</td><td>{it.get('name', 'Товар')}</td><td>{it.get('unit', '-')}</td><td>{it.get('qty', 0)}</td><td>{it.get('price', 0)}</td><td>{it.get('qty', 0)*it.get('price', 0):.2f}</td></tr>"
-    
-    # 2. Вставляємо шлях до шрифту та інші дані в HTML
-    html = html.replace("{{font_path}}", font_path)
-    html = html.replace("{{items_rows}}", rows).replace("{{invoice_num}}", data.get("invoice_num", "-"))
-    html = html.replace("{{date}}", data.get("date", "-")).replace("{{total_with_vat}}", f"{data.get('total_with_vat', 0):.2f}")
-    
     pdf_path = "Nakladna.pdf"
-    generate_pdf(html, pdf_path)
+    
+    # Викликаємо нову генерацію через fpdf2
+    create_invoice_pdf(data, pdf_path)
     
     await update.message.reply_document(document=open(pdf_path, 'rb'), filename="Nakladna.pdf")
     
@@ -84,7 +122,6 @@ async def process_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE, data: 
     return ConversationHandler.END
 
 if __name__ == '__main__':
-    # Форсований запуск Event Loop для обходу помилки Python 3.14 на Render
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
@@ -99,7 +136,6 @@ if __name__ == '__main__':
     
     print("Бот запущено через ручний Event Loop")
     
-    # Запускаємо внутрішні механізми бота крок за кроком
     loop.run_until_complete(app.initialize())
     loop.run_until_complete(app.updater.start_polling())
     loop.run_until_complete(app.start())
