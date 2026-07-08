@@ -3,11 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <style>
-        @font-face {
-            font-family: 'Times';
-            src: url('DejaVuSerif.ttf');
-        }
-        body { font-family: 'Times', serif; font-size: 11px; }
+        body { font-family: DejaVu Sans, sans-serif; font-size: 11px; }
         .header-table { width: 100%; margin-bottom: 20px; }
         .title { text-align: center; font-size: 14px; font-weight: bold; margin: 10px 0; }
         .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
@@ -17,28 +13,16 @@
 </head>
 <body>
     <table class="header-table">
-        <tr><td><b>Одержувач:</b></td><td>ТОВ "МЕРЕЖА-СЕРВІС ЛЬВІВ", тел. 0800201800</td></tr>
-        <tr><td><b>Постачальник:</b></td><td>ПП "ТРОЯНДА-ЗАХІД", ЄДРПОУ 30275535</td></tr>
-        <tr><td><b>Умова продажу:</b></td><td>Безготівковий розрахунок</td></tr>
+        <tr><td><b>Одержувач:</b></td><td>ТОВ "МЕРЕЖА-СЕРВІС ЛЬВІВ"</td></tr>
+        <tr><td><b>Постачальник:</b></td><td>ПП "ТРОЯНДА-ЗАХІД"</td></tr>
     </table>
-
-    <div class="title">Накладна на повернення № {{invoice_num}} від {{date}}</div>
-
+    <div class="title">Накладна № {{invoice_num}} від {{date}}</div>
     <table class="items-table">
-        <tr><th>№</th><th>Товар</th><th>Од.</th><th>Кількість</th><th>Ціна без ПДВ</th><th>Сума без ПДВ</th></tr>
+        <tr><th>№</th><th>Товар</th><th>Од.</th><th>Кількість</th><th>Ціна</th><th>Сума</th></tr>
         {{items_rows}}
     </table>
-
     <table class="totals-table">
-        <tr><td style="text-align: right;"><b>Разом без ПДВ:</b> {{total_no_vat}} грн.</td></tr>
-        <tr><td style="text-align: right;"><b>ПДВ:</b> {{vat}} грн.</td></tr>
         <tr><td style="text-align: right;"><b>Всього з ПДВ:</b> {{total_with_vat}} грн.</td></tr>
-    </table>
-
-    <p><b>Сума прописом:</b> {{total_text}}</p>
-    <br><br>
-    <table style="width: 100%;">
-        <tr><td>Отримав(ла) _______________________</td><td style="text-align: right;">Видав(ла) _______________________</td></tr>
     </table>
 </body>
 </html>
