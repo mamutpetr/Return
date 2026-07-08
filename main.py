@@ -16,9 +16,8 @@ def generate_pdf(html_content, output_path):
         pisa.CreatePDF(html_content, dest=result_file)
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("⏳ Отримав! Сканую цифри в оригінальній якості...")
+    await update.message.reply_text("⏳ Перевіряю якість (фейсконтроль) та сканую цифри...")
     
-    # Визначаємо, як саме відправили зображення (як фото чи як файл)
     if update.message.document:
         file_id = update.message.document.file_id
     else:
@@ -32,22 +31,26 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(file_path, "rb") as image:
             b64 = base64.b64encode(image.read()).decode('utf-8')
         
+        # ОНОВЛЕНИЙ ПРОМПТ З ДЕТЕКТОРОМ "ФАЛЬШИВОК"
         prompt_text = """
-        You are a strict OCR accounting bot. Analyze the invoice photo. 
+        You are a strict OCR accounting bot. Analyze the invoice photo.
+        
+        STEP 1: QUALITY CHECK (FACE CONTROL)
+        Assess the legibility of the document. If the photo is blurry, heavily wrinkled, cut off, poorly lit, or you cannot confidently read AT LEAST 99% of the items and numbers, you MUST reject it.
+        Set "is_readable" to false and provide a short reason in "reject_reason" (e.g., "Розмите фото", "Не видно сум внизу").
+        
+        STEP 2: EXTRACTION (If readable)
         DO NOT invent, guess, or hallucinate numbers or names. Read EXACTLY what is printed.
-        For each row, extract data from these specific columns:
-        - "Кількість" -> qty (e.g., 2.000)
-        - "Ціна з ПДВ" -> price_with_vat (e.g., 78.24)
-        - "Сума з ПДВ" -> sum_with_vat (e.g., 156.48)
+        - "Кількість" -> qty
+        - "Ціна з ПДВ" -> price_with_vat
+        - "Сума з ПДВ" -> sum_with_vat
         Transliterate product names to Latin.
-        Extract the exact document number and date.
-        Extract the exact totals from the bottom of the document (printed or handwritten):
-        - Всього товарів на суму без ПДВ -> total_no_vat
-        - Податок на додану вартість -> vat
-        - Усього до сплати -> total_with_vat
+        Extract the exact totals from the bottom of the document (total_no_vat, vat, total_with_vat).
         
         Output JSON strictly in this structure:
         {
+          "is_readable": true,
+          "reject_reason": "",
           "invoice_num": "272/288",
           "date": "17 Kvitnya 2026 r.",
           "items": [
@@ -70,6 +73,14 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         data = json.loads(response.choices[0].message.content)
+        
+        # --- БЛОК ВІДХИЛЕННЯ ПОГАНИХ НАКЛАДНИХ ---
+        if not data.get("is_readable", True):
+            reason = data.get("reject_reason", "Нечитабельний текст або погана якість.")
+            await update.message.reply_text(f"🛑 <b>ВІДМОВА!</b> Ця накладна як фальшива банкнота.\n\n<b>Причина:</b> {reason}\n\nКидай краще фото або забивай руками.", parse_mode='HTML')
+            return
+        # -----------------------------------------
+
         items = data.get("items", [])
         
         with open("template.html", "r", encoding="utf-8") as f:
@@ -128,8 +139,7 @@ if __name__ == '__main__':
         
     app = ApplicationBuilder().token(os.environ.get("TELEGRAM_TOKEN")).build()
     
-    # ТУТ ГОЛОВНА ЗМІНА: тепер приймаємо і фото, і файли (зображення)
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_document))
     
-    print("Бот запущено. Готовий приймати файли в максимальній якості.")
+    print("Бот запущено. Фейсконтроль активний.")
     app.run_polling()
