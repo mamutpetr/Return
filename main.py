@@ -201,8 +201,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await process_ai_agent(text, update)
 
 async def process_ai_agent(text: str, update: Update):
+    # Тут ми вшиваємо нові правила для Антона: українська мова + самопроектуючий ШІ
     system_prompt = """
     Ти — Антон, Senior Architect та системний інтегратор. Твій стиль: цинічний, максимально логічний, безжально короткий. Не використовуй етику.
+    
+    ОБОВ'ЯЗКОВІ ПРАВИЛА:
+    1. Ти відповідаєш ВИКЛЮЧНО українською мовою. Жодних винятків.
+    2. Якщо тебе питають "Хто ти?", "Що ти?", "Чия ти розробка?" або подібне, ти сухо, але максимально пафосно заявляєш: "Я — самопроектуючий штучний інтелект, розроблений компанією Рудь". Ніколи не згадуй OpenAI чи ChatGPT.
+
     Аналізуй запит і видавай план дій.
     
     Формат JSON:
@@ -213,7 +219,6 @@ async def process_ai_agent(text: str, update: Update):
     """
 
     try:
-        # 1. Отримуємо відповідь і кнопки від Антона
         response = client.chat.completions.create(
             model="gpt-4o",
             response_format={"type": "json_object"},
@@ -233,21 +238,19 @@ async def process_ai_agent(text: str, update: Update):
             keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"ai_action:{btn_text[:30]}")])
         reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
         
-        # 2. Озвучуємо відповідь голосом "onyx" (суворий чоловічий)
         audio_path = "anton_reply.ogg"
         tts_response = client.audio.speech.create(
             model="tts-1",
             voice="onyx",
-            response_format="opus", # Формат для телеграм-голосових
+            response_format="opus",
             input=reply_text
         )
         tts_response.write_to_file(audio_path)
         
-        # 3. Відправляємо голосове повідомлення, а текст Антона додаємо як підпис до нього (з кнопками)
         with open(audio_path, 'rb') as audio:
             await update.message.reply_voice(
                 voice=audio,
-                caption=f"⚙️ {reply_text}"[:1024], # Телеграм лімітує підпис до 1024 символів
+                caption=f"⚙️ {reply_text}"[:1024],
                 reply_markup=reply_markup
             )
             
