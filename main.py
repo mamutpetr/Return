@@ -3,7 +3,7 @@ import json
 import asyncio
 import base64
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, ConversationHandler, CommandHandler, CallbackQueryHandler
 from openai import OpenAI
 from fpdf import FPDF
@@ -150,24 +150,30 @@ async def process_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE, data: 
 # ==========================================
 # 2. ШІ-АГЕНТ "АНТОН" (ГОЛОС І ТЕКСТ)
 # ==========================================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [KeyboardButton("⚡ Викликати Антона"), KeyboardButton("📷 Фото накладної")],
+        [KeyboardButton("📊 Звіти (1С)"), KeyboardButton("💼 Залишки на складі")]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text(
+        "Система ініціалізована. Готовий до роботи.\n\nЗакидай фото накладних, записуй голосові або тисни кнопки.",
+        reply_markup=reply_markup
+    )
+
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_chat_action(action="typing")
+    await update.message.reply_chat_action(action="record_voice")
     file_id = update.message.voice.file_id
     file = await context.bot.get_file(file_id)
     file_path = "voice.ogg"
     await file.download_to_drive(file_path)
 
     try:
-        # Розпізнаємо голос через Whisper
         with open(file_path, "rb") as audio_file:
-            transcription = client.audio.transcriptions.create(
-                model="whisper-1", 
-                file=audio_file
-            )
+            transcription = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
         text = transcription.text
         await update.message.reply_text(f"🎤 Розпізнано:\n_{text}_", parse_mode="Markdown")
-        
-        # Передаємо текст до Антона
         await process_ai_agent(text, update)
     except Exception as e:
         await update.message.reply_text(f"Помилка аудіо: {str(e)}")
@@ -175,25 +181,39 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if os.path.exists(file_path): os.remove(file_path)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get('temp_data'): return # Пропускаємо, якщо чекаємо суму накладної
-    await update.message.reply_chat_action(action="typing")
-    await process_ai_agent(update.message.text, update)
+    text = update.message.text
+    if context.user_data.get('temp_data'): return 
+    
+    if text == "📷 Фото накладної":
+        await update.message.reply_text("Чекаю фотографію або скан накладної.")
+        return
+    elif text == "📊 Звіти (1С)":
+        await update.message.reply_text("Модуль 1С в процесі інтеграції. Завтра тут будуть графіки.")
+        return
+    elif text == "💼 Залишки на складі":
+        await update.message.reply_text("Запит до бази... Модуль 1С ще не активовано.")
+        return
+    elif text == "⚡ Викликати Антона":
+        await update.message.reply_text("Слухаю. Тільки по суті.")
+        return
+
+    await update.message.reply_chat_action(action="record_voice")
+    await process_ai_agent(text, update)
 
 async def process_ai_agent(text: str, update: Update):
-    # Характер Антона, налаштований на дію
     system_prompt = """
-    Ти — Антон, Senior Architect та системний інтегратор. Твій стиль: цинічний, максимально логічний, безжально короткий. 
-    Ти не використовуєш зайвої етики, привітань чи води. Твоя задача — проаналізувати запит, розкласти його на факти і видати план дій.
+    Ти — Антон, Senior Architect та системний інтегратор. Твій стиль: цинічний, максимально логічний, безжально короткий. Не використовуй етику.
+    Аналізуй запит і видавай план дій.
     
-    Ти ПОВИНЕН завжди відповідати у форматі JSON:
+    Формат JSON:
     {
-      "text": "Твоя суха і чітка відповідь-аналіз",
+      "text": "Твоя суха і чітка відповідь",
       "buttons": ["Кнопка дії 1", "Кнопка дії 2"]
     }
-    Якщо потрібні дії (наприклад 'Створити задачу', 'Зберегти в базу', 'Розрахувати'), додай їх у buttons. Максимум 3 кнопки.
     """
 
     try:
+        # 1. Отримуємо відповідь і кнопки від Антона
         response = client.chat.completions.create(
             model="gpt-4o",
             response_format={"type": "json_object"},
@@ -210,22 +230,38 @@ async def process_ai_agent(text: str, update: Update):
         
         keyboard = []
         for btn_text in buttons_data:
-            # Обрізаємо колбек до 30 символів (обмеження Telegram)
             keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"ai_action:{btn_text[:30]}")])
-            
         reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
-        await update.message.reply_text(reply_text, reply_markup=reply_markup)
         
+        # 2. Озвучуємо відповідь голосом "onyx" (суворий чоловічий)
+        audio_path = "anton_reply.ogg"
+        tts_response = client.audio.speech.create(
+            model="tts-1",
+            voice="onyx",
+            response_format="opus", # Формат для телеграм-голосових
+            input=reply_text
+        )
+        tts_response.write_to_file(audio_path)
+        
+        # 3. Відправляємо голосове повідомлення, а текст Антона додаємо як підпис до нього (з кнопками)
+        with open(audio_path, 'rb') as audio:
+            await update.message.reply_voice(
+                voice=audio,
+                caption=f"⚙️ {reply_text}"[:1024], # Телеграм лімітує підпис до 1024 символів
+                reply_markup=reply_markup
+            )
+            
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+            
     except Exception as e:
         await update.message.reply_text(f"Помилка мислення: {str(e)}")
 
 async def handle_ai_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
     action = query.data.replace("ai_action:", "")
-    # Тут буде відвал, коли ми підключимо 1С. Поки що бот просто імітує виконання.
-    await query.edit_message_text(text=f"⚙️ Виконую дію: {action}...\n(Завтра тут буде прямий запит до 1С по API)")
+    await query.edit_message_caption(caption=f"⚙️ Беру в роботу: {action}...\n(Тут буде хук в 1С)")
 
 # ==========================================
 # ЗАПУСК
@@ -236,7 +272,8 @@ if __name__ == '__main__':
     
     app = ApplicationBuilder().token(os.environ.get("TELEGRAM_TOKEN")).build()
     
-    # Хендлер для фоток (накладні)
+    app.add_handler(CommandHandler('start', start))
+    
     conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo)],
         states={ASKING_FOR_TOTAL: [MessageHandler(filters.TEXT, receive_hint)]},
@@ -244,7 +281,6 @@ if __name__ == '__main__':
     )
     app.add_handler(conv_handler)
     
-    # Нові хендлери для Антона
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(handle_ai_buttons, pattern="^ai_action:"))
