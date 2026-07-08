@@ -15,7 +15,7 @@ ASKING_FOR_TOTAL = 1
 
 def generate_pdf(html_content, output_path):
     with open(output_path, "w+b") as result_file:
-        # Кодуємо в utf-8 байт-рядок, щоб xhtml2pdf коректно бачив кирилицю
+        # Кодуємо в utf-8 байт-рядок, щоб xhtml2pdf коректно бачив текст
         pisa.CreatePDF(html_content.encode('utf-8'), dest=result_file, encoding='utf-8')
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -52,17 +52,26 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def receive_hint(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = context.user_data.get('temp_data')
-    data['total_with_vat'] = float(update.message.text.replace(',', '.'))
+    try:
+        data['total_with_vat'] = float(update.message.text.replace(',', '.'))
+    except ValueError:
+        await update.message.reply_text("Будь ласка, введи коректне число (наприклад, 100.50):")
+        return ASKING_FOR_TOTAL
     return await process_pdf(update, context, data)
 
 async def process_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE, data: dict):
     with open("template.html", "r", encoding="utf-8") as f:
         html = f.read()
     
+    # 1. Отримуємо абсолютний шлях до шрифту на сервері Render
+    font_path = os.path.abspath("DejaVuSerif.ttf")
+    
     rows = ""
     for idx, it in enumerate(data.get('items', []), 1):
         rows += f"<tr><td>{idx}</td><td>{it.get('name', 'Товар')}</td><td>{it.get('unit', '-')}</td><td>{it.get('qty', 0)}</td><td>{it.get('price', 0)}</td><td>{it.get('qty', 0)*it.get('price', 0):.2f}</td></tr>"
     
+    # 2. Вставляємо шлях до шрифту та інші дані в HTML
+    html = html.replace("{{font_path}}", font_path)
     html = html.replace("{{items_rows}}", rows).replace("{{invoice_num}}", data.get("invoice_num", "-"))
     html = html.replace("{{date}}", data.get("date", "-")).replace("{{total_with_vat}}", f"{data.get('total_with_vat', 0):.2f}")
     
