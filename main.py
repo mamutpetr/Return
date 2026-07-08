@@ -19,41 +19,41 @@ def create_invoice_pdf(data, output_path):
     
     # Підключаємо шрифт
     pdf.add_font('DejaVu', '', 'DejaVuSerif.ttf')
-    
-    # --- ШАПКА 1С ---[span_2](start_span)[span_2](end_span)
     pdf.set_font('DejaVu', '', 9)
     
-    pdf.cell(30, 5, 'Одержувач:', border=0)
+    # --- ШАПКА 1С ---
+    pdf.cell(35, 5, 'Одержувач:', border=0)
     pdf.cell(0, 5, 'ТОВ "МЕРЕЖА-СЕРВІС ЛЬВІВ", тел. 0800201800', ln=1)
     
-    pdf.cell(30, 5, 'Постачальник:', border=0)
+    pdf.cell(35, 5, 'Постачальник:', border=0)
     pdf.multi_cell(0, 5, 'ПП "ТРОЯНДА-ЗАХІД", ЄДРПОУ 30275535, тел. 0322395800\nР/р UA873052990000026002021002174 в АТ КБ "ПРИВАТБАНК"\nІПН 302755313052, свідоцтво 17957486\nЛьвівська обл., м. Львів, вул. Повстанська, буд. 3А, кв. 8')
     
-    pdf.cell(30, 5, 'Платник:', border=0)
+    pdf.cell(35, 5, 'Платник:', border=0)
     pdf.cell(0, 5, 'той самий', ln=1)
     
-    pdf.cell(30, 5, 'Замовлення:', border=0)
+    pdf.cell(35, 5, 'Замовлення:', border=0)
     pdf.cell(0, 5, 'Без замовлення', ln=1)
     
-    pdf.cell(30, 5, 'Умова продажу:', border=0)
+    pdf.cell(35, 5, 'Умова продажу:', border=0)
     pdf.cell(0, 5, 'Безготівковий розрахунок', ln=1)
     
-    pdf.ln(5)
+    pdf.ln(8)
     
-    # --- ЗАГОЛОВОК ---[span_3](start_span)[span_3](end_span)
-    pdf.set_font('DejaVu', '', 12)
+    # --- ЗАГОЛОВОК ---
+    pdf.set_font('DejaVu', '', 14)
     invoice_num = data.get("invoice_num", "________")
-    date = data.get("date", "________________")
     pdf.cell(0, 6, f'Накладна на повернення № {invoice_num}', align='C', ln=1)
+    pdf.set_font('DejaVu', '', 11)
+    date = data.get("date", "________________")
     pdf.cell(0, 6, f'від {date}', align='C', ln=1)
-    pdf.ln(5)
+    pdf.ln(6)
     
-    # --- ТАБЛИЦЯ ---[span_4](start_span)[span_4](end_span)
+    # --- ТАБЛИЦЯ ---
     pdf.set_font('DejaVu', '', 9)
     col_widths = [10, 85, 15, 20, 30, 30]
     headers = ['№', 'Товар', 'Од.', 'Кількість', 'Ціна без ПДВ', 'Сума без ПДВ']
     
-    # Малюємо заголовки колонок[span_5](start_span)[span_5](end_span)
+    # Малюємо заголовки колонок
     for i in range(len(headers)):
         pdf.cell(col_widths[i], 8, headers[i], border=1, align='C')
     pdf.ln()
@@ -71,44 +71,57 @@ def create_invoice_pdf(data, output_path):
         
         qty = float(it.get('qty', 0))
         price = float(it.get('price_no_vat', 0))
+        if price == 0 and 'price' in it: # Запобіжник, якщо ШІ віддасть старий формат
+            price = float(it.get('price', 0))
+            
         sum_no_vat = qty * price
         
+        # Формат 1С: кількість 3 знаки (1.000), ціна 6 знаків (87.900000)
         pdf.cell(col_widths[3], 8, f"{qty:.3f}", border=1, align='C')
-        pdf.cell(col_widths[4], 8, f"{price:.2f}", border=1, align='C')
-        pdf.cell(col_widths[5], 8, f"{sum_no_vat:.2f}", border=1, align='C')
+        pdf.cell(col_widths[4], 8, f"{price:.6f}", border=1, align='C')
+        pdf.cell(col_widths[5], 8, f"{sum_no_vat:.2f}", border=1, align='R')
         pdf.ln()
         
-    pdf.ln(5)
+    pdf.ln(4)
     
-    # --- ПІДСУМКИ ---[span_6](start_span)[span_6](end_span)
-    pdf.set_font('DejaVu', '', 10)
+    # --- БЛОК ПІДСУМКІВ (ТАБЛИЧКА З РАМКАМИ ЗНИЗУ СПРАВА) ---
     total_no_vat = float(data.get('total_no_vat', 0))
     vat = float(data.get('vat', 0))
     total_with_vat = float(data.get('total_with_vat', 0))
+    
+    pdf.set_font('DejaVu', '', 10)
+    
+    # Сумарна ширина таблиці = 190. Робимо відступ так, щоб табличка підсумків прилягала до правого краю
+    label_x = 10 + 190 - 30 - 45
+    
+    # Разом без ПДВ
+    pdf.set_x(label_x)
+    pdf.cell(45, 8, 'Разом без ПДВ:', align='R')
+    pdf.cell(30, 8, f'{total_no_vat:.2f}', border=1, align='R', ln=1)
+    
+    # ПДВ
+    pdf.set_x(label_x)
+    pdf.cell(45, 8, 'ПДВ:', align='R')
+    pdf.cell(30, 8, f'{vat:.2f}', border=1, align='R', ln=1)
+    
+    # Всього з ПДВ
+    pdf.set_x(label_x)
+    pdf.cell(45, 8, 'Всього з ПДВ:', align='R')
+    pdf.cell(30, 8, f'{total_with_vat:.2f}', border=1, align='R', ln=1)
+    
+    pdf.ln(8)
+    
+    # --- ФУТЕР ---
     total_text = data.get('total_text', '____________________')
-    
-    pdf.cell(160, 6, 'Разом без ПДВ:', align='R')
-    pdf.cell(30, 6, f'{total_no_vat:.2f}', align='R', ln=1)
-    
-    pdf.cell(160, 6, 'ПДВ:', align='R')
-    pdf.cell(30, 6, f'{vat:.2f}', align='R', ln=1)
-    
-    pdf.cell(160, 6, 'Всього з ПДВ:', align='R')
-    pdf.cell(30, 6, f'{total_with_vat:.2f}', align='R', ln=1)
-    
-    pdf.ln(5)
-    
-    # --- ФУТЕР ---[span_7](start_span)[span_7](end_span)
+    pdf.set_font('DejaVu', '', 9)
     pdf.cell(0, 6, 'Всього на суму:', ln=1)
     pdf.cell(0, 6, f'Сума прописом: {total_text}', ln=1)
     pdf.cell(0, 6, f'ПДВ: {vat:.2f} грн.', ln=1)
     
     pdf.ln(10)
-    
     pdf.cell(95, 6, 'Отримав(ла) _______________________', align='L')
     pdf.cell(95, 6, 'Видав(ла) _______________________', align='R', ln=1)
     
-    # Зберігаємо файл
     pdf.output(output_path)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -122,7 +135,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(file_path, "rb") as image:
             b64 = base64.b64encode(image.read()).decode('utf-8')
         
-        # Оновлений запит до ШІ, щоб тягнув ціни без ПДВ і суму прописом
         prompt = """Аналізуй накладну. Поверни JSON: {"is_readable": bool, "invoice_num": str, "date": str, "items": [{"name": str, "unit": str, "qty": float, "price_no_vat": float}], "total_no_vat": float, "vat": float, "total_with_vat": float, "total_text": str}. Якщо нечитабельно, is_readable: false."""
         
         response = client.chat.completions.create(
@@ -149,7 +161,6 @@ async def receive_hint(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         total = float(update.message.text.replace(',', '.'))
         data['total_with_vat'] = total
-        # Вираховуємо приблизне ПДВ і суму без ПДВ, якщо довелося вводити вручну
         data['total_no_vat'] = total / 1.2
         data['vat'] = total - data['total_no_vat']
     except ValueError:
