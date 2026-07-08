@@ -4,7 +4,7 @@ import base64
 import logging
 import asyncio
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, ConversationHandler, CommandHandler
+from telegram.ext import ApplicationBuilder, MessageHandler, filters, ConversationHandler, CommandHandler
 from openai import OpenAI
 from xhtml2pdf import pisa
 
@@ -13,8 +13,9 @@ client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 ASKING_FOR_TOTAL = 1
 
 def generate_pdf(html_content, output_path):
+    # xhtml2pdf автоматично знайде шрифт, якщо він в тій же папці
     with open(output_path, "w+b") as result_file:
-        pisa.CreatePDF(html_content, dest=result_file)
+        pisa.CreatePDF(html_content, dest=result_file, encoding='UTF-8')
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Аналізую накладну...")
@@ -27,9 +28,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(file_path, "rb") as image:
             b64 = base64.b64encode(image.read()).decode('utf-8')
         
-        prompt = """Аналізуй накладну. Витягни дані точно. 
-        Відповідь JSON: {"is_readable": bool, "invoice_num": str, "date": str, "items": [{"name": str, "unit": str, "qty": float, "price": float}], "total_no_vat": float, "vat": float, "total_with_vat": float, "total_text": str}.
-        Якщо нечитабельно, is_readable: false."""
+        prompt = """Аналізуй накладну. Витягни дані точно. Відповідь JSON: {"is_readable": bool, "invoice_num": str, "date": str, "items": [{"name": str, "unit": str, "qty": float, "price": float}], "total_no_vat": float, "vat": float, "total_with_vat": float, "total_text": str}. Якщо нечитабельно, is_readable: false."""
         
         response = client.chat.completions.create(
             model="gpt-4o",
