@@ -8,7 +8,6 @@ from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filte
 from openai import OpenAI
 from fpdf import FPDF
 
-# Налаштування логування
 logging.basicConfig(level=logging.INFO)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 ASKING_FOR_TOTAL = 1
@@ -19,9 +18,10 @@ def create_invoice_pdf(data, output_path):
     
     # Підключаємо шрифт
     pdf.add_font('DejaVu', '', 'DejaVuSerif.ttf')
-    pdf.set_font('DejaVu', '', 9)
+    pdf.set_text_color(0, 0, 0) # Чіткий чорний колір
     
     # --- ШАПКА 1С ---
+    pdf.set_font('DejaVu', '', 9)
     pdf.cell(35, 5, 'Одержувач:', border=0)
     pdf.cell(0, 5, 'ТОВ "МЕРЕЖА-СЕРВІС ЛЬВІВ", тел. 0800201800', ln=1)
     
@@ -53,9 +53,10 @@ def create_invoice_pdf(data, output_path):
     col_widths = [10, 85, 15, 20, 30, 30]
     headers = ['№', 'Товар', 'Од.', 'Кількість', 'Ціна без ПДВ', 'Сума без ПДВ']
     
-    # Малюємо заголовки колонок
+    # Малюємо заголовки колонок із СІРОЮ ЗАЛИВКОЮ
+    pdf.set_fill_color(235, 235, 235) # Світло-сірий
     for i in range(len(headers)):
-        pdf.cell(col_widths[i], 8, headers[i], border=1, align='C')
+        pdf.cell(col_widths[i], 8, headers[i], border=1, align='C', fill=True)
     pdf.ln()
     
     # Малюємо товари
@@ -71,12 +72,11 @@ def create_invoice_pdf(data, output_path):
         
         qty = float(it.get('qty', 0))
         price = float(it.get('price_no_vat', 0))
-        if price == 0 and 'price' in it: # Запобіжник, якщо ШІ віддасть старий формат
+        if price == 0 and 'price' in it:
             price = float(it.get('price', 0))
             
         sum_no_vat = qty * price
         
-        # Формат 1С: кількість 3 знаки (1.000), ціна 6 знаків (87.900000)
         pdf.cell(col_widths[3], 8, f"{qty:.3f}", border=1, align='C')
         pdf.cell(col_widths[4], 8, f"{price:.6f}", border=1, align='C')
         pdf.cell(col_widths[5], 8, f"{sum_no_vat:.2f}", border=1, align='R')
@@ -84,27 +84,22 @@ def create_invoice_pdf(data, output_path):
         
     pdf.ln(4)
     
-    # --- БЛОК ПІДСУМКІВ (ТАБЛИЧКА З РАМКАМИ ЗНИЗУ СПРАВА) ---
+    # --- БЛОК ПІДСУМКІВ ---
     total_no_vat = float(data.get('total_no_vat', 0))
     vat = float(data.get('vat', 0))
     total_with_vat = float(data.get('total_with_vat', 0))
     
     pdf.set_font('DejaVu', '', 10)
-    
-    # Сумарна ширина таблиці = 190. Робимо відступ так, щоб табличка підсумків прилягала до правого краю
     label_x = 10 + 190 - 30 - 45
     
-    # Разом без ПДВ
     pdf.set_x(label_x)
     pdf.cell(45, 8, 'Разом без ПДВ:', align='R')
     pdf.cell(30, 8, f'{total_no_vat:.2f}', border=1, align='R', ln=1)
     
-    # ПДВ
     pdf.set_x(label_x)
     pdf.cell(45, 8, 'ПДВ:', align='R')
     pdf.cell(30, 8, f'{vat:.2f}', border=1, align='R', ln=1)
     
-    # Всього з ПДВ
     pdf.set_x(label_x)
     pdf.cell(45, 8, 'Всього з ПДВ:', align='R')
     pdf.cell(30, 8, f'{total_with_vat:.2f}', border=1, align='R', ln=1)
@@ -170,18 +165,14 @@ async def receive_hint(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE, data: dict):
     pdf_path = "Nakladna.pdf"
-    
     create_invoice_pdf(data, pdf_path)
-    
     await update.message.reply_document(document=open(pdf_path, 'rb'), filename="Nakladna.pdf")
-    
     if os.path.exists(pdf_path): os.remove(pdf_path)
     return ConversationHandler.END
 
 if __name__ == '__main__':
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
     app = ApplicationBuilder().token(os.environ.get("TELEGRAM_TOKEN")).build()
     
     conv_handler = ConversationHandler(
@@ -192,7 +183,6 @@ if __name__ == '__main__':
     app.add_handler(conv_handler)
     
     print("Бот запущено через ручний Event Loop")
-    
     loop.run_until_complete(app.initialize())
     loop.run_until_complete(app.updater.start_polling())
     loop.run_until_complete(app.start())
