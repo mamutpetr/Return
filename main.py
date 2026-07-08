@@ -10,7 +10,6 @@ from xhtml2pdf import pisa
 
 logging.basicConfig(level=logging.INFO)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
 ASKING_FOR_TOTAL = 1
 
 def generate_pdf(html_content, output_path):
@@ -35,7 +34,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = client.chat.completions.create(
             model="gpt-4o",
             response_format={"type": "json_object"},
-            messages=[{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}]
+            messages=[{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}],
         )
         data = json.loads(response.choices[0].message.content)
         
@@ -56,16 +55,12 @@ async def receive_hint(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def process_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE, data: dict):
     with open("template.html", "r", encoding="utf-8") as f:
         html = f.read()
-    
     rows = ""
     for idx, it in enumerate(data['items'], 1):
         rows += f"<tr><td>{idx}</td><td>{it['name']}</td><td>{it['unit']}</td><td>{it['qty']}</td><td>{it['price']:.2f}</td><td>{it['qty']*it['price']:.2f}</td></tr>"
-    
-    html = html.replace("{{items_rows}}", rows).replace("{{invoice_num}}", data.get("invoice_num", "-"))
-    html = html.replace("{{date}}", data.get("date", "-")).replace("{{total_no_vat}}", f"{data.get('total_no_vat', 0):.2f}")
-    html = html.replace("{{vat}}", f"{data.get('vat', 0):.2f}").replace("{{total_with_vat}}", f"{data.get('total_with_vat', 0):.2f}")
+    html = html.replace("{{items_rows}}", rows).replace("{{invoice_num}}", data.get("invoice_num", "-")).replace("{{date}}", data.get("date", "-"))
+    html = html.replace("{{total_no_vat}}", f"{data.get('total_no_vat', 0):.2f}").replace("{{vat}}", f"{data.get('vat', 0):.2f}").replace("{{total_with_vat}}", f"{data.get('total_with_vat', 0):.2f}")
     html = html.replace("{{total_text}}", data.get("total_text", ""))
-    
     pdf_path = "Nakladna.pdf"
     generate_pdf(html, pdf_path)
     await update.message.reply_document(document=open(pdf_path, 'rb'), filename="Nakladna.pdf")
@@ -73,6 +68,8 @@ async def process_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE, data: 
     return ConversationHandler.END
 
 if __name__ == '__main__':
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     app = ApplicationBuilder().token(os.environ.get("TELEGRAM_TOKEN")).build()
     conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo)],
@@ -80,4 +77,7 @@ if __name__ == '__main__':
         fallbacks=[CommandHandler('cancel', lambda u, c: ConversationHandler.END)]
     )
     app.add_handler(conv_handler)
-    app.run_polling()
+    loop.run_until_complete(app.initialize())
+    loop.run_until_complete(app.updater.start_polling())
+    loop.run_until_complete(app.start())
+    loop.run_forever()
