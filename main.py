@@ -77,7 +77,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # --- БЛОК ВІДХИЛЕННЯ ПОГАНИХ НАКЛАДНИХ ---
         if not data.get("is_readable", True):
             reason = data.get("reject_reason", "Нечитабельний текст або погана якість.")
-            await update.message.reply_text(f"🛑 <b>ВІДМОВА!</b> Ця накладна як фальшива банкнота.\n\n<b>Причина:</b> {reason}\n\nКидай краще фото або забивай руками.", parse_mode='HTML')
+            await update.message.reply_text(f"🛑 <b>ВІДМОВА!</b> Данні можуть бути не точними.\n\n<b>Причина:</b> {reason}\n\nКидай краще фото або забивай руками.", parse_mode='HTML')
             return
         # -----------------------------------------
 
